@@ -275,7 +275,7 @@ k1, k2, k3, k4 = st.columns(4)
 k1.metric("Halka No", halka_no)
 k2.metric("Son Ring Arka Kenarı", ch_fmt(ch_son_ring))
 k3.metric("Cutter Head", ch_fmt(ch_cutter))
-k4.metric("Yön (Azimut)", f"{math.degrees(konum[2])%360:.1f}°" if konum else "—")
+k4.metric("Toplam Tünel Metrajı", f"{halka_no * HALKA_UZUNLUK:.2f} m")
 
 if ch_cutter < guzergah.sta_bas:
     st.warning(f"⚠️ Halka {halka_no} güzergah dışında (Ch {ch_fmt(ch_tbm)} < başlangıç {ch_fmt(guzergah.sta_bas)}).")
