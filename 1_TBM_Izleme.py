@@ -256,6 +256,10 @@ def ch_fmt(ch_m: float) -> str:
 def _supabase():
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
+@st.cache_resource
+def _supabase_admin():
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_SR_KEY"])
+
 def halka_yukle():
     try:
         r = _supabase().table("tbm_durum").select("halka_no").eq("id", 1).single().execute()
@@ -264,20 +268,21 @@ def halka_yukle():
         return 0
 
 def halka_kaydet(n):
-    _supabase().table("tbm_durum").upsert({"id": 1, "halka_no": n}).execute()
+    _supabase_admin().table("tbm_durum").upsert({"id": 1, "halka_no": n}).execute()
 
 def pdf_yukle(ring_no, dosya_bytes):
     dosya_adi = f"ring_{ring_no}.pdf"
+    sb = _supabase_admin()
     try:
-        _supabase().storage.from_("ring-raporlari").remove([dosya_adi])
+        sb.storage.from_("ring-raporlari").remove([dosya_adi])
     except Exception:
         pass
-    _supabase().storage.from_("ring-raporlari").upload(
+    sb.storage.from_("ring-raporlari").upload(
         dosya_adi, dosya_bytes, {"content-type": "application/pdf"})
-    return _supabase().storage.from_("ring-raporlari").get_public_url(dosya_adi)
+    return sb.storage.from_("ring-raporlari").get_public_url(dosya_adi)
 
 def rapor_kaydet(ring_no, pdf_url):
-    _supabase().table("ring_raporlari").upsert(
+    _supabase_admin().table("ring_raporlari").upsert(
         {"ring_no": ring_no, "pdf_url": pdf_url}).execute()
 
 def raporlari_getir():
