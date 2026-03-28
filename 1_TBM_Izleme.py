@@ -249,10 +249,12 @@ if konum:
                 la, lo = proje2wgs(*pt_ne)
                 if la: folium.Marker([la, lo], tooltip=etiket,
                     icon=folium.Icon(color=renk, icon=simge, prefix="fa")).add_to(m)
-        yon_derece = math.degrees(yon_rad) % 360
+        # TBM azalan chainage yönünde ilerliyor → 180° çevir
+        yon_tbm = yon_rad + math.pi
+        yon_derece = math.degrees(yon_tbm) % 360
         # TBM gövdesi — 13m × 10m
         folium.Polygon(
-            locations=dikdortgen_koseler(lat_tbm, lon_tbm, yon_rad, 13.0, 10.0),
+            locations=dikdortgen_koseler(lat_tbm, lon_tbm, yon_tbm, 13.0, 10.0),
             color="#D32F2F", weight=2,
             fill=True, fill_color="#EF5350", fill_opacity=0.85,
             tooltip=f"TBM | Ring: {halka_no} | {yon_derece:.1f}° | Ch {ch_fmt(ch)}"
@@ -260,7 +262,7 @@ if konum:
         # Gantry — 130m × 10m, TBM'nin hemen arkasına bitişik
         # TBM arka kenarı: -6.5m, gantry merkezi: -6.5 - 65 = -71.5m
         folium.Polygon(
-            locations=dikdortgen_koseler(lat_tbm, lon_tbm, yon_rad, 130.0, 10.0, merkez_ofseti=-71.5),
+            locations=dikdortgen_koseler(lat_tbm, lon_tbm, yon_tbm, 130.0, 10.0, merkez_ofseti=-71.5),
             color="#F57F17", weight=2,
             fill=True, fill_color="#FFD54F", fill_opacity=0.75,
             tooltip=f"Gantry | Ring: {halka_no} | Ch {ch_fmt(ch)}"
