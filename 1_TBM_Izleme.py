@@ -251,63 +251,117 @@ def ch_fmt(ch_m: float) -> str:
     m  = ch_m - km * 1000
     return f"{km}+{m:06.2f}"
 
+# ── Supabase bağlantısı ────────────────────────────────────────────────────────
 @st.cache_resource
 def _supabase():
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-def halka_yukle() -> int:
+def giris_yap(email, sifre):
+    try:
+        r = _supabase().auth.sign_in_with_password({"email": email, "password": sifre})
+        return r.session
+    except Exception:
+        return None
+
+def rol_getir(uid):
+    try:
+        r = (_supabase().table("kullanici_roller")
+             .select("rol").eq("kullanici_id", str(uid)).single().execute())
+        return r.data["rol"]
+    except Exception:
+        return "viewer"
+
+def halka_yukle():
     try:
         r = _supabase().table("tbm_durum").select("halka_no").eq("id", 1).single().execute()
         return int(r.data["halka_no"])
     except Exception:
         return 0
 
-def halka_kaydet(n: int):
+def halka_kaydet(n):
     _supabase().table("tbm_durum").upsert({"id": 1, "halka_no": n}).execute()
 
-st.title("🚇 TBM İzleme — Blue Line TN07")
+def pdf_yukle(ring_no, dosya_bytes):
+    dosya_adi = f"ring_{ring_no}.pdf"
+    try:
+        _supabase().storage.from_("ring-raporlari").remove([dosya_adi])
+    except Exception:
+        pass
+    _supabase().storage.from_("ring-raporlari").upload(
+        dosya_adi, dosya_bytes, {"content-type": "application/pdf"})
+    return _supabase().storage.from_("ring-raporlari").get_public_url(dosya_adi)
+
+def rapor_kaydet(ring_no, pdf_url, uid):
+    _supabase().table("ring_raporlari").upsert(
+        {"ring_no": ring_no, "pdf_url": pdf_url, "yukleyen": str(uid)}).execute()
+
+def raporlari_getir():
+    try:
+        r = (_supabase().table("ring_raporlari")
+             .select("ring_no, pdf_url, yukleme_tarihi")
+             .order("ring_no", desc=True).execute())
+        return r.data
+    except Exception:
+        return []
+
+# ── Giriş ekranı ───────────────────────────────────────────────────────────────
+if "session" not in st.session_state:
+    st.session_state.session = None
+    st.session_state.rol     = None
+
+if st.session_state.session is None:
+    st.title("🚇 TBM İzleme — Giriş")
+    with st.form("login_form"):
+        email = st.text_input("E-posta")
+        sifre = st.text_input("Şifre", type="password")
+        if st.form_submit_button("Giriş Yap"):
+            session = giris_yap(email, sifre)
+            if session:
+                st.session_state.session = session
+                st.session_state.rol     = rol_getir(session.user.id)
+                st.rerun()
+            else:
+                st.error("E-posta veya şifre hatalı.")
+    st.stop()
+
+_session = st.session_state.session
+_rol     = st.session_state.rol
+
+# ── Ana uygulama ───────────────────────────────────────────────────────────────
+col_bas, col_cikis = st.columns([8, 1])
+col_bas.title("🚇 TBM İzleme — Blue Line TN07")
+if col_cikis.button("Çıkış"):
+    _supabase().auth.sign_out()
+    st.session_state.session = None
+    st.session_state.rol     = None
+    st.rerun()
+st.caption(f"👤 {_session.user.email}  •  {_rol.upper()}")
+
 guzergah  = Guzergah(LANDXML_TN07)
 sta_son   = guzergah.sta_bas + guzergah.uzunluk
 max_halka = int((HALKA_BASLANGIC_CH - guzergah.sta_bas) / HALKA_UZUNLUK)
 
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Güzergah Uzunluğu",   f"{guzergah.uzunluk:.1f} m")
-c2.metric("Halka Başlangıç Ch.", ch_fmt(HALKA_BASLANGIC_CH))
+c1.metric("Güzergah Uzunluğu",      f"{guzergah.uzunluk:.1f} m")
+c2.metric("Halka Başlangıç Ch.",    ch_fmt(HALKA_BASLANGIC_CH))
 c3.metric("Güzergah Başlangıç Ch.", ch_fmt(guzergah.sta_bas))
-c4.metric("Tahmini Maks. Halka", max_halka)
+c4.metric("Tahmini Maks. Halka",    max_halka)
 st.divider()
 
-kayitli_halka = halka_yukle()
-halka_no = st.number_input("🔢 Halka Numarası (Ring No)",
-    min_value=0, max_value=max(max_halka+50, 500), value=kayitli_halka, step=1,
-    help=f"Ring 0 → Ch {ch_fmt(HALKA_BASLANGIC_CH)}  |  Ring {max_halka} → Ch {ch_fmt(guzergah.sta_bas)}")
-
-with st.expander("🔐 Admin — Ring Güncelle"):
-    sifre = st.text_input("Şifre", type="password", key="admin_sifre")
-    if sifre == st.secrets.get("ADMIN_SIFRE", ""):
-        yeni_halka = st.number_input("Yeni Halka No",
-            min_value=0, max_value=max(max_halka+50, 500),
-            value=kayitli_halka, step=1, key="admin_halka")
-        if st.button("💾 Kaydet"):
-            halka_kaydet(yeni_halka)
-            st.success(f"Ring {yeni_halka} kaydedildi.")
-            st.rerun()
-    elif sifre:
-        st.error("Şifre yanlış.")
-
-ch_son_ring   = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK   # son ring arka kenarı
-ch_cutter     = ch_son_ring - TBM_UZUNLUK                        # cutter head
-ch_tbm        = ch_son_ring - TBM_UZUNLUK / 2                    # TBM merkezi (çizim için)
-konum         = guzergah.tbm_konumu(halka_no)
+halka_no    = halka_yukle()
+ch_son_ring = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK
+ch_cutter   = ch_son_ring - TBM_UZUNLUK
+ch_tbm      = ch_son_ring - TBM_UZUNLUK / 2
+konum       = guzergah.tbm_konumu(halka_no)
 
 k1, k2, k3, k4 = st.columns(4)
-k1.metric("Halka No", halka_no)
-k2.metric("Son Ring Arka Kenarı", ch_fmt(ch_son_ring))
-k3.metric("Cutter Head", ch_fmt(ch_cutter))
-k4.metric("Toplam Tünel Metrajı", f"{halka_no * HALKA_UZUNLUK + TBM_UZUNLUK:.2f} m")
+k1.metric("Halka No",              halka_no)
+k2.metric("Son Ring Arka Kenarı",  ch_fmt(ch_son_ring))
+k3.metric("Cutter Head",           ch_fmt(ch_cutter))
+k4.metric("Toplam Tünel Metrajı",  f"{halka_no * HALKA_UZUNLUK + TBM_UZUNLUK:.2f} m")
 
 if ch_cutter < guzergah.sta_bas:
-    st.warning(f"⚠️ Halka {halka_no} güzergah dışında (Ch {ch_fmt(ch_tbm)} < başlangıç {ch_fmt(guzergah.sta_bas)}).")
+    st.warning(f"⚠️ Halka {halka_no} güzergah dışında.")
 st.divider()
 
 if konum:
@@ -325,46 +379,78 @@ if konum:
                 tooltip="TN07 Tünel Güzergahı").add_to(m)
         for pt_ne, etiket, renk, simge in [
             (guzergah.konum(guzergah.sta_bas), f"Başlangıç Şaftı Ch:{ch_fmt(guzergah.sta_bas)}", "green", "home"),
-            (guzergah.konum(sta_son), f"Bitiş Şaftı Ch:{ch_fmt(sta_son)}", "blue", "flag")]:
+            (guzergah.konum(sta_son),          f"Bitiş Şaftı Ch:{ch_fmt(sta_son)}",               "blue",  "flag")]:
             if pt_ne:
                 la, lo = proje2wgs(*pt_ne)
-                if la: folium.Marker([la, lo], tooltip=etiket,
-                    icon=folium.Icon(color=renk, icon=simge, prefix="fa")).add_to(m)
-        # TBM azalan chainage yönünde ilerliyor → 180° çevir
-        yon_tbm = yon_rad + math.pi
+                if la:
+                    folium.Marker([la, lo], tooltip=etiket,
+                        icon=folium.Icon(color=renk, icon=simge, prefix="fa")).add_to(m)
+        yon_tbm   = yon_rad + math.pi
         yon_derece = math.degrees(yon_tbm) % 360
-        # TBM gövdesi — 13m × 10m
         folium.Polygon(
             locations=dikdortgen_koseler(lat_tbm, lon_tbm, yon_tbm, TBM_UZUNLUK, 10.0),
             color="#D32F2F", weight=2,
             fill=True, fill_color="#EF5350", fill_opacity=0.85,
             tooltip=f"TBM | Ring: {halka_no} | {yon_derece:.1f}° | Ch {ch_fmt(ch)}"
         ).add_to(m)
-        # Tamamlanan halkalar — her ring ayrı polygon, çift/tek renk
         if halka_no > 0:
-            gc = rings_geojson(guzergah, halka_no)
             folium.GeoJson(
-                gc,
+                rings_geojson(guzergah, halka_no),
                 style_function=lambda f: {
-                    "fillColor": "#78909C" if f["properties"]["cift"] else "#B0BEC5",
-                    "color": "#37474F",
-                    "weight": 0.8,
+                    "fillColor":   "#78909C" if f["properties"]["cift"] else "#B0BEC5",
+                    "color":       "#37474F",
+                    "weight":      0.8,
                     "fillOpacity": 0.80,
                 },
                 tooltip=folium.GeoJsonTooltip(
-                    fields=["ring", "ch"],
-                    aliases=["Ring:", "Chainage:"],
-                    localize=True
-                ),
+                    fields=["ring", "ch"], aliases=["Ring:", "Chainage:"], localize=True),
                 name="Tamamlanan Halkalar"
             ).add_to(m)
         folium.LayerControl().add_to(m)
         st_folium(m, width="100%", height=620, key="tbm_harita")
     else:
         st.error(f"⚠️ EPSG:{EPSG_PROJE} → WGS84 dönüşümü başarısız.")
-        st.info(f"Ham koordinatlar: N=`{N_tbm:.3f}`, E=`{E_tbm:.3f}`\nQGIS'te WGS84 karşılığını bulup bildirin.")
+        st.info(f"Ham koordinatlar: N=`{N_tbm:.3f}`, E=`{E_tbm:.3f}`")
         with st.expander("🔧 Tüm güzergah noktaları (ham)"):
             for N, E, sta in guzergah.cizgi[::10]:
                 st.write(f"Ch {sta:.1f} m → N={N:.3f}, E={E:.3f}")
 else:
     st.info(f"Ring {halka_no} güzergah dışında. Geçerli aralık: 0–{max_halka}")
+
+st.divider()
+
+# ── Ring Raporları ─────────────────────────────────────────────────────────────
+st.subheader("📋 Ring Raporları")
+
+if _rol == "admin":
+    col_a, col_b = st.columns(2)
+
+    with col_a.expander("➕ Rapor Yükle"):
+        r_ring = st.number_input("Ring No", min_value=0,
+                                 max_value=max(max_halka, halka_no), value=halka_no, key="pdf_ring")
+        r_pdf  = st.file_uploader("PDF Seç", type="pdf", key="pdf_upload")
+        if st.button("Yükle") and r_pdf:
+            with st.spinner("Yükleniyor…"):
+                url = pdf_yukle(r_ring, r_pdf.read())
+                rapor_kaydet(r_ring, url, _session.user.id)
+            st.success(f"Ring {r_ring} raporu yüklendi.")
+            st.rerun()
+
+    with col_b.expander("⚙️ Ring No Güncelle"):
+        yeni = st.number_input("Yeni Halka No", min_value=0,
+                               max_value=max(max_halka+50, 500), value=halka_no, key="yeni_halka")
+        if st.button("💾 Kaydet"):
+            halka_kaydet(yeni)
+            st.success(f"Ring {yeni} kaydedildi.")
+            st.rerun()
+
+raporlar = raporlari_getir()
+if raporlar:
+    for r in raporlar:
+        c1, c2, c3 = st.columns([1, 3, 1])
+        c1.write(f"**Ring {r['ring_no']}**")
+        tarih = r["yukleme_tarihi"][:10] if r.get("yukleme_tarihi") else "—"
+        c2.write(tarih)
+        c3.link_button("📄 İndir", r["pdf_url"])
+else:
+    st.info("Henüz rapor yüklenmemiş.")
