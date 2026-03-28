@@ -203,6 +203,29 @@ def koridor_polygon_wgs(guzergah, ch_bas, ch_son, genislik, adim=3.0):
         if la_l: sol.append([la_l, lo_l])
     return sag + sol[::-1] if sag and sol else []
 
+def rings_geojson(guzergah, halka_no):
+    """Tamamlanan halkaları GeoJSON FeatureCollection olarak döndürür."""
+    features = []
+    for i in range(halka_no):
+        ch_son = HALKA_BASLANGIC_CH - i * HALKA_UZUNLUK
+        ch_bas = ch_son - HALKA_UZUNLUK
+        pts = koridor_polygon_wgs(guzergah, ch_bas, ch_son, TUNEL_CAPI, adim=0.9)
+        if not pts:
+            continue
+        # GeoJSON koordinatları [lon, lat] sıralamasında olmalı
+        coords = [[p[1], p[0]] for p in pts]
+        coords.append(coords[0])
+        features.append({
+            "type": "Feature",
+            "properties": {
+                "ring": i,
+                "ch": ch_fmt(ch_son),
+                "cift": i % 2
+            },
+            "geometry": {"type": "Polygon", "coordinates": [coords]}
+        })
+    return {"type": "FeatureCollection", "features": features}
+
 def proje2wgs(N, E):
     try:
         lon, lat = _donusturucu().transform(E, N)
@@ -284,18 +307,24 @@ if konum:
             fill=True, fill_color="#EF5350", fill_opacity=0.85,
             tooltip=f"TBM | Ring: {halka_no} | {yon_derece:.1f}° | Ch {ch_fmt(ch)}"
         ).add_to(m)
-        # Tamamlanan tünel ringlari — TBM arkasından başlangıç chainage'ine kadar
-        ch_tunel_bas = ch_tbm + 6.5   # TBM arka kenarı
-        ch_tunel_son = HALKA_BASLANGIC_CH
-        if halka_no > 0 and ch_tunel_son > ch_tunel_bas:
-            tunel_pts = koridor_polygon_wgs(guzergah, ch_tunel_bas, ch_tunel_son, TUNEL_CAPI)
-            if tunel_pts:
-                folium.Polygon(
-                    locations=tunel_pts,
-                    color="#546E7A", weight=1,
-                    fill=True, fill_color="#90A4AE", fill_opacity=0.70,
-                    tooltip=f"Tamamlanan Tünel | {halka_no} ring | {halka_no*HALKA_UZUNLUK:.1f} m"
-                ).add_to(m)
+        # Tamamlanan halkalar — her ring ayrı polygon, çift/tek renk
+        if halka_no > 0:
+            gc = rings_geojson(guzergah, halka_no)
+            folium.GeoJson(
+                gc,
+                style_function=lambda f: {
+                    "fillColor": "#78909C" if f["properties"]["cift"] else "#B0BEC5",
+                    "color": "#37474F",
+                    "weight": 0.8,
+                    "fillOpacity": 0.80,
+                },
+                tooltip=folium.GeoJsonTooltip(
+                    fields=["ring", "ch"],
+                    aliases=["Ring:", "Chainage:"],
+                    localize=True
+                ),
+                name="Tamamlanan Halkalar"
+            ).add_to(m)
         folium.LayerControl().add_to(m)
         st_folium(m, width="100%", height=620, key="tbm_harita")
     else:
