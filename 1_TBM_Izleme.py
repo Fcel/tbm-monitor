@@ -266,16 +266,18 @@ halka_no = st.number_input("🔢 Halka Numarası (Ring No)",
     min_value=0, max_value=max(max_halka+50, 500), value=0, step=1,
     help=f"Ring 0 → Ch {ch_fmt(HALKA_BASLANGIC_CH)}  |  Ring {max_halka} → Ch {ch_fmt(guzergah.sta_bas)}")
 
-ch_tbm = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK - TBM_UZUNLUK / 2
-konum  = guzergah.tbm_konumu(halka_no)
+ch_son_ring   = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK   # son ring arka kenarı
+ch_cutter     = ch_son_ring - TBM_UZUNLUK                        # cutter head
+ch_tbm        = ch_son_ring - TBM_UZUNLUK / 2                    # TBM merkezi (çizim için)
+konum         = guzergah.tbm_konumu(halka_no)
 
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Halka No", halka_no)
-k2.metric("TBM Chainage", ch_fmt(ch_tbm))
-k3.metric("İlerleme", f"{halka_no * HALKA_UZUNLUK:.1f} m")
+k2.metric("Son Ring Arka Kenarı", ch_fmt(ch_son_ring))
+k3.metric("Cutter Head", ch_fmt(ch_cutter))
 k4.metric("Yön (Azimut)", f"{math.degrees(konum[2])%360:.1f}°" if konum else "—")
 
-if ch_tbm < guzergah.sta_bas:
+if ch_cutter < guzergah.sta_bas:
     st.warning(f"⚠️ Halka {halka_no} güzergah dışında (Ch {ch_fmt(ch_tbm)} < başlangıç {ch_fmt(guzergah.sta_bas)}).")
 st.divider()
 
