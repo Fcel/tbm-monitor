@@ -157,18 +157,20 @@ def _donusturucu():
     from pyproj import Transformer
     return Transformer.from_crs(EPSG_PROJE, 4326, always_xy=True)
 
-def tbm_dikdortgen(lat, lon, yon_rad, uzunluk=13.0, genislik=10.0):
-    """TBM'nin 13m × 10m dikdörtgen köşelerini WGS84 cinsinden döndürür."""
+def dikdortgen_koseler(lat, lon, yon_rad, uzunluk, genislik, merkez_ofseti=0.0):
+    """Verilen merkez ofsetine göre döndürülmüş dikdörtgen köşelerini WGS84 cinsinden döndürür.
+    merkez_ofseti: ileri yönde TBM merkezinden metre cinsinden kaydırma (+ileri, -geri)."""
     yar_u = uzunluk / 2
     yar_g = genislik / 2
-    # İleri ve sağ birim vektörler (Kuzey-Doğu düzleminde)
     ileri = (math.sin(yon_rad), math.cos(yon_rad))   # (dE, dN)
     sag   = (math.cos(yon_rad), -math.sin(yon_rad))
     lat_rad = math.radians(lat)
     m_per_lat = 111320.0
     m_per_lon = 111320.0 * math.cos(lat_rad)
+    cx = merkez_ofseti * ileri[0]
+    cy = merkez_ofseti * ileri[1]
     def offset(dE, dN):
-        return [lat + dN / m_per_lat, lon + dE / m_per_lon]
+        return [lat + (dN + cy) / m_per_lat, lon + (dE + cx) / m_per_lon]
     return [
         offset( yar_u*ileri[0] + yar_g*sag[0],  yar_u*ileri[1] + yar_g*sag[1]),
         offset( yar_u*ileri[0] - yar_g*sag[0],  yar_u*ileri[1] - yar_g*sag[1]),
@@ -248,12 +250,20 @@ if konum:
                 if la: folium.Marker([la, lo], tooltip=etiket,
                     icon=folium.Icon(color=renk, icon=simge, prefix="fa")).add_to(m)
         yon_derece = math.degrees(yon_rad) % 360
-        koseler = tbm_dikdortgen(lat_tbm, lon_tbm, yon_rad, uzunluk=13.0, genislik=10.0)
+        # TBM gövdesi — 13m × 10m
         folium.Polygon(
-            locations=koseler,
+            locations=dikdortgen_koseler(lat_tbm, lon_tbm, yon_rad, 13.0, 10.0),
             color="#D32F2F", weight=2,
             fill=True, fill_color="#EF5350", fill_opacity=0.85,
             tooltip=f"TBM | Ring: {halka_no} | {yon_derece:.1f}° | Ch {ch_fmt(ch)}"
+        ).add_to(m)
+        # Gantry — 130m × 10m, TBM'nin hemen arkasına bitişik
+        # TBM arka kenarı: -6.5m, gantry merkezi: -6.5 - 65 = -71.5m
+        folium.Polygon(
+            locations=dikdortgen_koseler(lat_tbm, lon_tbm, yon_rad, 130.0, 10.0, merkez_ofseti=-71.5),
+            color="#F57F17", weight=2,
+            fill=True, fill_color="#FFD54F", fill_opacity=0.75,
+            tooltip=f"Gantry | Ring: {halka_no} | Ch {ch_fmt(ch)}"
         ).add_to(m)
         folium.LayerControl().add_to(m)
         st_folium(m, width="100%", height=620, key="tbm_harita")
