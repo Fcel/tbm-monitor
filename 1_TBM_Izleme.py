@@ -136,7 +136,7 @@ class Guzergah:
         return 0.0
 
     def tbm_konumu(self, halka_no: int):
-        ch = HALKA_BASLANGIC_CH + halka_no * HALKA_UZUNLUK
+        ch = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK
         pt = self.konum(ch)
         return None if pt is None else (pt[0], pt[1], self.azimut(ch), ch)
 
@@ -174,33 +174,38 @@ def guzergah_wgs84(cizgi):
     return out
 
 
+def ch_fmt(ch_m: float) -> str:
+    km = int(ch_m // 1000)
+    m  = ch_m - km * 1000
+    return f"{km}+{m:06.2f}"
+
 st.title("🚇 TBM İzleme — Blue Line TN07")
-guzergah = Guzergah(LANDXML_TN07)
+guzergah  = Guzergah(LANDXML_TN07)
 sta_son   = guzergah.sta_bas + guzergah.uzunluk
-max_halka = int((sta_son - HALKA_BASLANGIC_CH) / HALKA_UZUNLUK)
+max_halka = int((HALKA_BASLANGIC_CH - guzergah.sta_bas) / HALKA_UZUNLUK)
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Güzergah Uzunluğu",   f"{guzergah.uzunluk:.1f} m")
-c2.metric("Halka Başlangıç Ch.", f"{HALKA_BASLANGIC_CH/1000:.3f} km")
-c3.metric("Güzergah Bitiş Ch.", f"{sta_son/1000:.3f} km")
+c2.metric("Halka Başlangıç Ch.", ch_fmt(HALKA_BASLANGIC_CH))
+c3.metric("Güzergah Başlangıç Ch.", ch_fmt(guzergah.sta_bas))
 c4.metric("Tahmini Maks. Halka", max_halka)
 st.divider()
 
 halka_no = st.number_input("🔢 Halka Numarası (Ring No)",
     min_value=0, max_value=max(max_halka+50, 500), value=0, step=1,
-    help=f"Ring 0 → Ch {HALKA_BASLANGIC_CH:.2f} m  |  Ring {max_halka} → Ch {sta_son:.2f} m")
+    help=f"Ring 0 → Ch {ch_fmt(HALKA_BASLANGIC_CH)}  |  Ring {max_halka} → Ch {ch_fmt(guzergah.sta_bas)}")
 
-ch_tbm = HALKA_BASLANGIC_CH + halka_no * HALKA_UZUNLUK
+ch_tbm = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK
 konum  = guzergah.tbm_konumu(halka_no)
 
 k1, k2, k3, k4 = st.columns(4)
 k1.metric("Halka No", halka_no)
-k2.metric("TBM Chainage", f"{ch_tbm/1000:.4f} km")
+k2.metric("TBM Chainage", ch_fmt(ch_tbm))
 k3.metric("İlerleme", f"{halka_no * HALKA_UZUNLUK:.1f} m")
 k4.metric("Yön (Azimut)", f"{math.degrees(konum[2])%360:.1f}°" if konum else "—")
 
-if ch_tbm > sta_son:
-    st.warning(f"⚠️ Halka {halka_no} güzergah dışında (Ch {ch_tbm:.1f} m > bitiş {sta_son:.1f} m).")
+if ch_tbm < guzergah.sta_bas:
+    st.warning(f"⚠️ Halka {halka_no} güzergah dışında (Ch {ch_fmt(ch_tbm)} < başlangıç {ch_fmt(guzergah.sta_bas)}).")
 st.divider()
 
 if konum:
@@ -217,21 +222,21 @@ if konum:
             folium.PolyLine(cizgi_wgs, color="#1565C0", weight=5, opacity=0.85,
                 tooltip="TN07 Tünel Güzergahı").add_to(m)
         for pt_ne, etiket, renk, simge in [
-            (guzergah.konum(guzergah.sta_bas), f"Başlangıç Şaftı Ch:{guzergah.sta_bas/1000:.3f}km", "green", "home"),
-            (guzergah.konum(sta_son), f"Bitiş Şaftı Ch:{sta_son/1000:.3f}km", "blue", "flag")]:
+            (guzergah.konum(guzergah.sta_bas), f"Başlangıç Şaftı Ch:{ch_fmt(guzergah.sta_bas)}", "green", "home"),
+            (guzergah.konum(sta_son), f"Bitiş Şaftı Ch:{ch_fmt(sta_son)}", "blue", "flag")]:
             if pt_ne:
                 la, lo = proje2wgs(*pt_ne)
                 if la: folium.Marker([la, lo], tooltip=etiket,
                     icon=folium.Icon(color=renk, icon=simge, prefix="fa")).add_to(m)
         folium.Circle(location=[lat_tbm, lon_tbm], radius=TBM_CAPI/2,
             color="#D32F2F", fill=True, fill_color="#EF5350", fill_opacity=0.7,
-            tooltip=f"TBM | Ring: {halka_no} | Ch: {ch:.2f} m").add_to(m)
+            tooltip=f"TBM | Ring: {halka_no} | Ch: {ch_fmt(ch)}").add_to(m)
         yon_css = math.degrees(yon_rad) % 360
         folium.Marker(location=[lat_tbm, lon_tbm],
             icon=folium.DivIcon(
                 html=f'<div style="transform:rotate({yon_css:.1f}deg);font-size:32px;color:#D32F2F;text-shadow:1px 1px 3px #000;width:36px;height:36px;display:flex;align-items:center;justify-content:center;">▲</div>',
                 icon_size=(36,36), icon_anchor=(18,18)),
-            tooltip=f"Ring {halka_no} | {yon_css:.1f}° | Ch {ch:.2f} m").add_to(m)
+            tooltip=f"Ring {halka_no} | {yon_css:.1f}° | Ch {ch_fmt(ch)}").add_to(m)
         folium.LayerControl().add_to(m)
         st_folium(m, width="100%", height=620, key="tbm_harita")
     else:
