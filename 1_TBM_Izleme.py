@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 import folium
 import streamlit as st
 from streamlit_folium import st_folium
+from supabase import create_client
 
 st.set_page_config(page_title="TBM İzleme", layout="wide", page_icon="🚇")
 
@@ -250,6 +251,20 @@ def ch_fmt(ch_m: float) -> str:
     m  = ch_m - km * 1000
     return f"{km}+{m:06.2f}"
 
+@st.cache_resource
+def _supabase():
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
+def halka_yukle() -> int:
+    try:
+        r = _supabase().table("tbm_durum").select("halka_no").eq("id", 1).single().execute()
+        return int(r.data["halka_no"])
+    except Exception:
+        return 0
+
+def halka_kaydet(n: int):
+    _supabase().table("tbm_durum").upsert({"id": 1, "halka_no": n}).execute()
+
 st.title("🚇 TBM İzleme — Blue Line TN07")
 guzergah  = Guzergah(LANDXML_TN07)
 sta_son   = guzergah.sta_bas + guzergah.uzunluk
@@ -262,9 +277,23 @@ c3.metric("Güzergah Başlangıç Ch.", ch_fmt(guzergah.sta_bas))
 c4.metric("Tahmini Maks. Halka", max_halka)
 st.divider()
 
+kayitli_halka = halka_yukle()
 halka_no = st.number_input("🔢 Halka Numarası (Ring No)",
-    min_value=0, max_value=max(max_halka+50, 500), value=0, step=1,
+    min_value=0, max_value=max(max_halka+50, 500), value=kayitli_halka, step=1,
     help=f"Ring 0 → Ch {ch_fmt(HALKA_BASLANGIC_CH)}  |  Ring {max_halka} → Ch {ch_fmt(guzergah.sta_bas)}")
+
+with st.expander("🔐 Admin — Ring Güncelle"):
+    sifre = st.text_input("Şifre", type="password", key="admin_sifre")
+    if sifre == st.secrets.get("ADMIN_SIFRE", ""):
+        yeni_halka = st.number_input("Yeni Halka No",
+            min_value=0, max_value=max(max_halka+50, 500),
+            value=kayitli_halka, step=1, key="admin_halka")
+        if st.button("💾 Kaydet"):
+            halka_kaydet(yeni_halka)
+            st.success(f"Ring {yeni_halka} kaydedildi.")
+            st.rerun()
+    elif sifre:
+        st.error("Şifre yanlış.")
 
 ch_son_ring   = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK   # son ring arka kenarı
 ch_cutter     = ch_son_ring - TBM_UZUNLUK                        # cutter head
