@@ -256,21 +256,6 @@ def ch_fmt(ch_m: float) -> str:
 def _supabase():
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-def giris_yap(email, sifre):
-    try:
-        r = _supabase().auth.sign_in_with_password({"email": email, "password": sifre})
-        return r.session
-    except Exception:
-        return None
-
-def rol_getir(uid):
-    try:
-        r = (_supabase().table("kullanici_roller")
-             .select("rol").eq("kullanici_id", str(uid)).single().execute())
-        return r.data["rol"]
-    except Exception:
-        return "viewer"
-
 def halka_yukle():
     try:
         r = _supabase().table("tbm_durum").select("halka_no").eq("id", 1).single().execute()
@@ -291,9 +276,9 @@ def pdf_yukle(ring_no, dosya_bytes):
         dosya_adi, dosya_bytes, {"content-type": "application/pdf"})
     return _supabase().storage.from_("ring-raporlari").get_public_url(dosya_adi)
 
-def rapor_kaydet(ring_no, pdf_url, uid):
+def rapor_kaydet(ring_no, pdf_url):
     _supabase().table("ring_raporlari").upsert(
-        {"ring_no": ring_no, "pdf_url": pdf_url, "yukleyen": str(uid)}).execute()
+        {"ring_no": ring_no, "pdf_url": pdf_url}).execute()
 
 def raporlari_getir():
     try:
@@ -305,37 +290,32 @@ def raporlari_getir():
         return []
 
 # ── Giriş ekranı ───────────────────────────────────────────────────────────────
-if "session" not in st.session_state:
-    st.session_state.session = None
-    st.session_state.rol     = None
+if "rol" not in st.session_state:
+    st.session_state.rol = None
 
-if st.session_state.session is None:
+if st.session_state.rol is None:
     st.title("🚇 TBM İzleme — Giriş")
     with st.form("login_form"):
-        email = st.text_input("E-posta")
-        sifre = st.text_input("Şifre", type="password")
+        kullanici = st.selectbox("Kullanıcı", ["USER", "ADMIN"])
+        sifre     = st.text_input("Şifre", type="password")
         if st.form_submit_button("Giriş Yap"):
-            session = giris_yap(email, sifre)
-            if session:
-                st.session_state.session = session
-                st.session_state.rol     = rol_getir(session.user.id)
+            sifre_key = "ADMIN_SIFRE" if kullanici == "ADMIN" else "USER_SIFRE"
+            if sifre == st.secrets.get(sifre_key, ""):
+                st.session_state.rol = kullanici
                 st.rerun()
             else:
-                st.error("E-posta veya şifre hatalı.")
+                st.error("Şifre hatalı.")
     st.stop()
 
-_session = st.session_state.session
-_rol     = st.session_state.rol
+_rol = st.session_state.rol
 
 # ── Ana uygulama ───────────────────────────────────────────────────────────────
 col_bas, col_cikis = st.columns([8, 1])
 col_bas.title("🚇 TBM İzleme — Blue Line TN07")
 if col_cikis.button("Çıkış"):
-    _supabase().auth.sign_out()
-    st.session_state.session = None
-    st.session_state.rol     = None
+    st.session_state.rol = None
     st.rerun()
-st.caption(f"👤 {_session.user.email}  •  {_rol.upper()}")
+st.caption(f"👤 {_rol}")
 
 guzergah  = Guzergah(LANDXML_TN07)
 sta_son   = guzergah.sta_bas + guzergah.uzunluk
@@ -432,7 +412,7 @@ if _rol == "admin":
         if st.button("Yükle") and r_pdf:
             with st.spinner("Yükleniyor…"):
                 url = pdf_yukle(r_ring, r_pdf.read())
-                rapor_kaydet(r_ring, url, _session.user.id)
+                rapor_kaydet(r_ring, url)
             st.success(f"Ring {r_ring} raporu yüklendi.")
             st.rerun()
 
