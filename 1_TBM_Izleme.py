@@ -178,6 +178,32 @@ def dikdortgen_koseler(lat, lon, yon_rad, uzunluk, genislik, merkez_ofseti=0.0):
         offset(-yar_u*ileri[0] + yar_g*sag[0], -yar_u*ileri[1] + yar_g*sag[1]),
     ]
 
+def gantry_polygon_wgs(guzergah, ch_tbm, genislik=10.0, uzunluk=130.0, adim=2.0):
+    """Güzergah eğrisini izleyen gantry çokgenini WGS84 koordinatlarında döndürür.
+    TBM arka kenarından (ch_tbm + 6.5) itibaren uzunluk kadar devam eder."""
+    yar_g = genislik / 2
+    ch_bas = ch_tbm + 6.5
+    ch_son = ch_bas + uzunluk
+    chainages, ch = [], ch_bas
+    while ch <= ch_son + 1e-6:
+        chainages.append(min(ch, ch_son))
+        ch += adim
+    if chainages[-1] < ch_son:
+        chainages.append(ch_son)
+    sag, sol = [], []
+    for c in chainages:
+        pt = guzergah.konum(c)
+        if pt is None:
+            continue
+        N, E = pt
+        az = guzergah.azimut(c)
+        # Sağ: (dN=-sin(az), dE=+cos(az)), Sol: tersi
+        la_s, lo_s = proje2wgs(N - math.sin(az)*yar_g, E + math.cos(az)*yar_g)
+        la_l, lo_l = proje2wgs(N + math.sin(az)*yar_g, E - math.cos(az)*yar_g)
+        if la_s: sag.append([la_s, lo_s])
+        if la_l: sol.append([la_l, lo_l])
+    return sag + sol[::-1] if sag and sol else []
+
 def proje2wgs(N, E):
     try:
         lon, lat = _donusturucu().transform(E, N)
@@ -259,14 +285,15 @@ if konum:
             fill=True, fill_color="#EF5350", fill_opacity=0.85,
             tooltip=f"TBM | Ring: {halka_no} | {yon_derece:.1f}° | Ch {ch_fmt(ch)}"
         ).add_to(m)
-        # Gantry — 130m × 10m, TBM'nin hemen arkasına bitişik
-        # TBM arka kenarı: -6.5m, gantry merkezi: -6.5 - 65 = -71.5m
-        folium.Polygon(
-            locations=dikdortgen_koseler(lat_tbm, lon_tbm, yon_tbm, 130.0, 10.0, merkez_ofseti=-71.5),
-            color="#F57F17", weight=2,
-            fill=True, fill_color="#FFD54F", fill_opacity=0.75,
-            tooltip=f"Gantry | Ring: {halka_no} | Ch {ch_fmt(ch)}"
-        ).add_to(m)
+        # Gantry — 130m × 10m, güzergah eğrisini izleyen çokgen
+        gantry_pts = gantry_polygon_wgs(guzergah, ch_tbm, genislik=10.0, uzunluk=130.0)
+        if gantry_pts:
+            folium.Polygon(
+                locations=gantry_pts,
+                color="#F57F17", weight=2,
+                fill=True, fill_color="#FFD54F", fill_opacity=0.75,
+                tooltip=f"Gantry | Ring: {halka_no} | Ch {ch_fmt(ch)}"
+            ).add_to(m)
         folium.LayerControl().add_to(m)
         st_folium(m, width="100%", height=620, key="tbm_harita")
     else:
