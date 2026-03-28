@@ -18,6 +18,7 @@ HALKA_UZUNLUK      = 1.8
 HALKA_BASLANGIC_CH = 308_771.62
 EPSG_PROJE         = 3997
 TBM_CAPI           = 6.5
+TBM_UZUNLUK        = 8.9
 TUNEL_CAPI         = 9.61
 
 LANDXML_TN07 = r"""<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2">
@@ -137,7 +138,8 @@ class Guzergah:
         return 0.0
 
     def tbm_konumu(self, halka_no: int):
-        ch = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK
+        # TBM arka kenarı son ringin önünde; merkez yarı boy kadar daha ileride
+        ch = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK - TBM_UZUNLUK / 2
         pt = self.konum(ch)
         return None if pt is None else (pt[0], pt[1], self.azimut(ch), ch)
 
@@ -264,7 +266,7 @@ halka_no = st.number_input("🔢 Halka Numarası (Ring No)",
     min_value=0, max_value=max(max_halka+50, 500), value=0, step=1,
     help=f"Ring 0 → Ch {ch_fmt(HALKA_BASLANGIC_CH)}  |  Ring {max_halka} → Ch {ch_fmt(guzergah.sta_bas)}")
 
-ch_tbm = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK
+ch_tbm = HALKA_BASLANGIC_CH - halka_no * HALKA_UZUNLUK - TBM_UZUNLUK / 2
 konum  = guzergah.tbm_konumu(halka_no)
 
 k1, k2, k3, k4 = st.columns(4)
@@ -302,7 +304,7 @@ if konum:
         yon_derece = math.degrees(yon_tbm) % 360
         # TBM gövdesi — 13m × 10m
         folium.Polygon(
-            locations=dikdortgen_koseler(lat_tbm, lon_tbm, yon_tbm, 13.0, 10.0),
+            locations=dikdortgen_koseler(lat_tbm, lon_tbm, yon_tbm, TBM_UZUNLUK, 10.0),
             color="#D32F2F", weight=2,
             fill=True, fill_color="#EF5350", fill_opacity=0.85,
             tooltip=f"TBM | Ring: {halka_no} | {yon_derece:.1f}° | Ch {ch_fmt(ch)}"
