@@ -402,7 +402,7 @@ st.divider()
 # ── Ring Raporları ─────────────────────────────────────────────────────────────
 st.subheader("📋 Ring Raporları")
 
-if _rol == "admin":
+if _rol == "ADMIN":
     col_a, col_b = st.columns(2)
 
     with col_a.expander("➕ Rapor Yükle"):
