@@ -18,6 +18,7 @@ HALKA_UZUNLUK      = 1.8
 HALKA_BASLANGIC_CH = 308_771.62
 EPSG_PROJE         = 3997
 TBM_CAPI           = 6.5
+TUNEL_CAPI         = 9.61
 
 LANDXML_TN07 = r"""<LandXML xmlns="http://www.landxml.org/schema/LandXML-1.2" version="1.2">
 <Alignments>
@@ -178,12 +179,11 @@ def dikdortgen_koseler(lat, lon, yon_rad, uzunluk, genislik, merkez_ofseti=0.0):
         offset(-yar_u*ileri[0] + yar_g*sag[0], -yar_u*ileri[1] + yar_g*sag[1]),
     ]
 
-def gantry_polygon_wgs(guzergah, ch_tbm, genislik=10.0, uzunluk=130.0, adim=2.0):
-    """Güzergah eğrisini izleyen gantry çokgenini WGS84 koordinatlarında döndürür.
-    TBM arka kenarından (ch_tbm + 6.5) itibaren uzunluk kadar devam eder."""
+def koridor_polygon_wgs(guzergah, ch_bas, ch_son, genislik, adim=3.0):
+    """ch_bas'tan ch_son'a güzergah eğrisini izleyen kıvrımlı koridor polygonu döndürür."""
+    if ch_son <= ch_bas:
+        return []
     yar_g = genislik / 2
-    ch_bas = ch_tbm + 6.5
-    ch_son = ch_bas + uzunluk
     chainages, ch = [], ch_bas
     while ch <= ch_son + 1e-6:
         chainages.append(min(ch, ch_son))
@@ -197,7 +197,6 @@ def gantry_polygon_wgs(guzergah, ch_tbm, genislik=10.0, uzunluk=130.0, adim=2.0)
             continue
         N, E = pt
         az = guzergah.azimut(c)
-        # Sağ: (dN=-sin(az), dE=+cos(az)), Sol: tersi
         la_s, lo_s = proje2wgs(N - math.sin(az)*yar_g, E + math.cos(az)*yar_g)
         la_l, lo_l = proje2wgs(N + math.sin(az)*yar_g, E - math.cos(az)*yar_g)
         if la_s: sag.append([la_s, lo_s])
@@ -285,15 +284,18 @@ if konum:
             fill=True, fill_color="#EF5350", fill_opacity=0.85,
             tooltip=f"TBM | Ring: {halka_no} | {yon_derece:.1f}° | Ch {ch_fmt(ch)}"
         ).add_to(m)
-        # Gantry — 130m × 10m, güzergah eğrisini izleyen çokgen
-        gantry_pts = gantry_polygon_wgs(guzergah, ch_tbm, genislik=10.0, uzunluk=130.0)
-        if gantry_pts:
-            folium.Polygon(
-                locations=gantry_pts,
-                color="#F57F17", weight=2,
-                fill=True, fill_color="#FFD54F", fill_opacity=0.75,
-                tooltip=f"Gantry | Ring: {halka_no} | Ch {ch_fmt(ch)}"
-            ).add_to(m)
+        # Tamamlanan tünel ringlari — TBM arkasından başlangıç chainage'ine kadar
+        ch_tunel_bas = ch_tbm + 6.5   # TBM arka kenarı
+        ch_tunel_son = HALKA_BASLANGIC_CH
+        if halka_no > 0 and ch_tunel_son > ch_tunel_bas:
+            tunel_pts = koridor_polygon_wgs(guzergah, ch_tunel_bas, ch_tunel_son, TUNEL_CAPI)
+            if tunel_pts:
+                folium.Polygon(
+                    locations=tunel_pts,
+                    color="#546E7A", weight=1,
+                    fill=True, fill_color="#90A4AE", fill_opacity=0.70,
+                    tooltip=f"Tamamlanan Tünel | {halka_no} ring | {halka_no*HALKA_UZUNLUK:.1f} m"
+                ).add_to(m)
         folium.LayerControl().add_to(m)
         st_folium(m, width="100%", height=620, key="tbm_harita")
     else:
