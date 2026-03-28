@@ -157,6 +157,25 @@ def _donusturucu():
     from pyproj import Transformer
     return Transformer.from_crs(EPSG_PROJE, 4326, always_xy=True)
 
+def tbm_dikdortgen(lat, lon, yon_rad, uzunluk=13.0, genislik=10.0):
+    """TBM'nin 13m × 10m dikdörtgen köşelerini WGS84 cinsinden döndürür."""
+    yar_u = uzunluk / 2
+    yar_g = genislik / 2
+    # İleri ve sağ birim vektörler (Kuzey-Doğu düzleminde)
+    ileri = (math.sin(yon_rad), math.cos(yon_rad))   # (dE, dN)
+    sag   = (math.cos(yon_rad), -math.sin(yon_rad))
+    lat_rad = math.radians(lat)
+    m_per_lat = 111320.0
+    m_per_lon = 111320.0 * math.cos(lat_rad)
+    def offset(dE, dN):
+        return [lat + dN / m_per_lat, lon + dE / m_per_lon]
+    return [
+        offset( yar_u*ileri[0] + yar_g*sag[0],  yar_u*ileri[1] + yar_g*sag[1]),
+        offset( yar_u*ileri[0] - yar_g*sag[0],  yar_u*ileri[1] - yar_g*sag[1]),
+        offset(-yar_u*ileri[0] - yar_g*sag[0], -yar_u*ileri[1] - yar_g*sag[1]),
+        offset(-yar_u*ileri[0] + yar_g*sag[0], -yar_u*ileri[1] + yar_g*sag[1]),
+    ]
+
 def proje2wgs(N, E):
     try:
         lon, lat = _donusturucu().transform(E, N)
@@ -228,15 +247,14 @@ if konum:
                 la, lo = proje2wgs(*pt_ne)
                 if la: folium.Marker([la, lo], tooltip=etiket,
                     icon=folium.Icon(color=renk, icon=simge, prefix="fa")).add_to(m)
-        folium.Circle(location=[lat_tbm, lon_tbm], radius=TBM_CAPI/2,
-            color="#D32F2F", fill=True, fill_color="#EF5350", fill_opacity=0.7,
-            tooltip=f"TBM | Ring: {halka_no} | Ch: {ch_fmt(ch)}").add_to(m)
-        yon_css = math.degrees(yon_rad) % 360
-        folium.Marker(location=[lat_tbm, lon_tbm],
-            icon=folium.DivIcon(
-                html=f'<div style="transform:rotate({yon_css:.1f}deg);font-size:32px;color:#D32F2F;text-shadow:1px 1px 3px #000;width:36px;height:36px;display:flex;align-items:center;justify-content:center;">▲</div>',
-                icon_size=(36,36), icon_anchor=(18,18)),
-            tooltip=f"Ring {halka_no} | {yon_css:.1f}° | Ch {ch_fmt(ch)}").add_to(m)
+        yon_derece = math.degrees(yon_rad) % 360
+        koseler = tbm_dikdortgen(lat_tbm, lon_tbm, yon_rad, uzunluk=13.0, genislik=10.0)
+        folium.Polygon(
+            locations=koseler,
+            color="#D32F2F", weight=2,
+            fill=True, fill_color="#EF5350", fill_opacity=0.85,
+            tooltip=f"TBM | Ring: {halka_no} | {yon_derece:.1f}° | Ch {ch_fmt(ch)}"
+        ).add_to(m)
         folium.LayerControl().add_to(m)
         st_folium(m, width="100%", height=620, key="tbm_harita")
     else:
